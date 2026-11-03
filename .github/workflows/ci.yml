@@ -1,19 +1,123 @@
-name: "CI"
+name: CI
 
-"on": ["push"]
+on:
+  push:
+  pull_request:
+    branches:
+      - main
 
 permissions:
-  contents: "read"
+  contents: read
 
 jobs:
-  ci:
-    name: "CI à compléter"
-    runs-on: "ubuntu-latest"
-    timeout-minutes: 5
-    steps:
-      - name: "Récupérer le code"
-        uses: "actions/checkout@v7.0.1"
-        with:
-          persist-credentials: false
+  verification:
+    name: ${{ matrix.check }}
+    runs-on: ubuntu-latest
 
-      # À compléter pendant le TD : environnement, dépendances et vérifications.
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [lint, format, tests]
+
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Installer uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Installer les dependances
+        run: uv sync --locked
+
+      - name: Lint
+        if: matrix.check == 'lint'
+        run: uv run ruff check .
+
+      - name: Format
+        if: matrix.check == 'format'
+        run: uv run ruff format --check .
+
+      - name: Tests avec rapport
+        if: matrix.check == 'tests'
+        run: |
+          uv run pytest tests/unit tests/integration -v --cov=supermarket_receipt_api --cov-report=xml:coverage.xml --cov-report=html:htmlcov --junitxml=report.xml
+
+      - name: Upload rapport
+        if: always() && matrix.check == 'tests'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            coverage.xml
+            report.xml
+            htmlcov/
+          if-no-files-found: warn
+
+  build:
+    name: Build package
+    needs: verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Installer uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Installer les dependances
+        run: uv sync --locked
+
+      - name: Construire le package
+        run: uv build
+
+      - name: Publier dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package
+          path: dist/
+          if-no-files-found: error
+  verify-artifacts:
+    name: Verifier les artifacts
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Telecharger le rapport
+        uses: actions/download-artifact@v4
+        with:
+          name: test-reports
+          path: rapports/
+
+      - name: Telecharger la distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package
+          path: distribution/
+
+      - name: Afficher les fichiers
+        run: |
+          echo "=== Rapports ==="
+          ls -R rapports/
+
+          echo "=== Distribution ==="
+          ls -R distribution/
+
+      - name: Verifier les fichiers
+        run: |
+          test -f rapports/coverage.xml
+          test -f rapports/report.xml
+          test -f rapports/htmlcov/index.html
+          find distribution/ -name "*.whl" | grep -q .
+          find distribution/ -name "*.tar.gz" | grep -q .
+
