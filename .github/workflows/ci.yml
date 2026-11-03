@@ -121,3 +121,6 @@ jobs:
           find distribution/ -name "*.whl" | grep -q .
           find distribution/ -name "*.tar.gz" | grep -q .
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
