@@ -38,5 +38,12 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Run tests
-        run: uv run pytest -q
+        run: uv run pytest -q --junitxml=report.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.python-version }}
+          path: report.xml
 
